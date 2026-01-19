@@ -250,13 +250,9 @@ def _update_workbook(excel_path, file_path):
 
 def _excel_path_for_year(year_two_digits):
     excel_name = f"20{year_two_digits}工区收文目录.xls"
-    excel_dir = os.path.dirname(WATCH_DIR)
-    p1 = os.path.join(excel_dir, excel_name)
+    p1 = os.path.join(WATCH_DIR, excel_name)
     if os.path.exists(p1):
         return p1
-    p2 = os.path.join(WATCH_DIR, excel_name)
-    if os.path.exists(p2):
-        return p2
     return None
 
 
