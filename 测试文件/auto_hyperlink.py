@@ -2,6 +2,8 @@ import os
 import re
 import shutil
 import time
+import atexit
+import ctypes
 from datetime import datetime
 
 import xlrd
@@ -13,6 +15,54 @@ from xlutils.copy import copy
 WATCH_DIR = r"e:\QC-攻关小组\正在进行项目\自主超链接\Autonomous-hyperlink\测试文件"
 RETRY_DELAY = 1
 RETRIES = 8
+LOCK_PATH = os.path.join(WATCH_DIR, ".auto_hyperlink.lock")
+
+
+def _process_exists(pid):
+    try:
+        pid = int(pid)
+    except Exception:
+        return False
+    if pid <= 0:
+        return False
+    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+    if handle:
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    return False
+
+
+def _acquire_lock():
+    try:
+        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            with open(LOCK_PATH, "r", encoding="utf-8") as f:
+                old_pid = f.read().strip()
+        except Exception:
+            old_pid = ""
+        if old_pid and _process_exists(old_pid):
+            return False
+        if old_pid:
+            time.sleep(0.5)
+            if _process_exists(old_pid):
+                return False
+        try:
+            os.remove(LOCK_PATH)
+        except Exception:
+            return False
+        return _acquire_lock()
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(str(os.getpid()))
+
+    def _cleanup():
+        try:
+            os.remove(LOCK_PATH)
+        except Exception:
+            pass
+
+    atexit.register(_cleanup)
+    return True
 
 
 def _find_year_two_digits(path):
@@ -303,6 +353,9 @@ class AutoHyperlinkHandler(FileSystemEventHandler):
 def main():
     if not os.path.exists(WATCH_DIR):
         raise SystemExit(f"目录不存在: {WATCH_DIR}")
+    if not _acquire_lock():
+        print("监控脚本已在运行，当前进程退出。")
+        return
     handler = AutoHyperlinkHandler()
     observer = Observer()
     observer.schedule(handler, WATCH_DIR, recursive=True)
