@@ -166,29 +166,31 @@ def _find_first_empty_row_com(ws, header_row, hm):
     return last_row + 1
 
 def _next_seq_com(ws, header_row, hm, target_row):
-    # 如果是紧接着表头的第一行，强制序号为1
-    if target_row == header_row + 1:
-        return 1
-
     seq_col = hm.get("序号")
     if not seq_col: return 1
     
-    # Check if target_row already has a sequence (if we are overwriting a blank row inside)
-    # But usually we want max seq + 1
-    
-    max_seq = 0
-    last_row = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
-    
-    for r in range(header_row + 1, last_row + 1):
-        if r == target_row: continue
+    # 1. 如果当前行已有序号，直接沿用（不覆盖）
+    current_val = str(ws.Cells(target_row, seq_col).Value or "").strip()
+    if current_val:
+        # 尝试转为数字，如果无法转换则原样返回
+        try:
+            return int(float(current_val))
+        except:
+            return current_val
+
+    # 2. 如果没有序号，则向上回溯寻找最近的一个有效序号
+    # 从 target_row - 1 向上遍历到 header_row + 1
+    for r in range(target_row - 1, header_row, -1):
         val = str(ws.Cells(r, seq_col).Value or "").strip()
         if val:
             try:
                 v = int(float(val))
-                max_seq = max(max_seq, v)
+                return v + 1
             except:
-                pass
-    return max_seq + 1
+                pass # 忽略非数字内容
+    
+    # 如果一直回溯到表头都没找到有效序号，说明这是第一条数据
+    return 1
 
 def _wait_for_file_unlock(filepath, timeout=3):
     """尝试等待文件解锁"""
