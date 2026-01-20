@@ -7,7 +7,7 @@ echo        AutoHyperlink Build Script
 echo ========================================================
 
 echo [1/4] Installing dependencies...
-pip install pyinstaller watchdog xlrd==1.2.0 xlutils xlwt pywin32 pillow
+pip install pyinstaller watchdog pywin32 pillow
 
 echo [2/4] Building AutoHyperlink.exe (Silent Mode + Icon)...
 pyinstaller --noconfirm --onefile --noconsole ^
@@ -16,10 +16,7 @@ pyinstaller --noconfirm --onefile --noconsole ^
     --hidden-import=win32com.client ^
     --hidden-import=pythoncom ^
     --hidden-import=pywintypes ^
-    --hidden-import=xlutils ^
     --hidden-import=watchdog ^
-    --hidden-import=xlwt ^
-    --hidden-import=xlrd ^
     "auto_hyperlink.py"
 
 echo [3/4] Building FolderMonitor.exe (Silent Mode + Icon)...
