@@ -7,20 +7,22 @@ echo        AutoHyperlink Build Script
 echo ========================================================
 
 echo [1/4] Installing dependencies...
-pip install pyinstaller watchdog xlrd==1.2.0 xlutils xlwt pywin32
+pip install pyinstaller watchdog xlrd==1.2.0 xlutils xlwt pywin32 pillow
 
-echo [2/4] Building AutoHyperlink.exe (Silent Mode)...
+echo [2/4] Building AutoHyperlink.exe (Silent Mode + Icon)...
 pyinstaller --noconfirm --onefile --noconsole ^
     --name "AutoHyperlink" ^
+    --icon "link.ico" ^
     --hidden-import=xlutils ^
     --hidden-import=watchdog ^
     --hidden-import=xlwt ^
     --hidden-import=xlrd ^
     "auto_hyperlink.py"
 
-echo [3/4] Building FolderMonitor.exe (Silent Mode)...
+echo [3/4] Building FolderMonitor.exe (Silent Mode + Icon)...
 pyinstaller --noconfirm --onefile --noconsole ^
     --name "FolderMonitor" ^
+    --icon "monitor.ico" ^
     --hidden-import=win32com.client ^
     --hidden-import=pythoncom ^
     "folder_monitor.py"
@@ -38,8 +40,8 @@ echo.
 echo ========================================================
 echo Build Complete!
 echo Executables location: %~dp0dist\
-echo   - AutoHyperlink.exe (Worker)
-echo   - FolderMonitor.exe (Manager)
+echo   - AutoHyperlink.exe (Green Link Icon)
+echo   - FolderMonitor.exe (Blue Monitor Icon)
 echo ========================================================
 echo Usage:
 echo 1. Copy BOTH files to the folder you want to monitor.
