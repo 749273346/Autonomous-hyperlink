@@ -8,11 +8,25 @@ import xlrd
 import xlwt
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+import sys
 from xlutils.copy import copy
 
-WATCH_DIR = r"e:\QC-攻关小组\正在进行项目\自主超链接\Autonomous-hyperlink\测试文件"
+# Determine the directory to watch:
+# If frozen (exe), use the executable's directory.
+# If script, use the script's directory.
+if getattr(sys, 'frozen', False):
+    WATCH_DIR = os.path.dirname(sys.executable)
+else:
+    WATCH_DIR = os.path.dirname(os.path.abspath(__file__))
+
 RETRY_DELAY = 1
 RETRIES = 8
+
+CATEGORY_PREFIX_MAP = {
+    "上级文": "SJW",
+    "其他": "QT",
+    "事项通知": "SXTZ",
+}
 
 
 def _find_year_two_digits(path):
@@ -96,10 +110,7 @@ def _infer_date_format(sheet, header_row, date_col):
 
 def _format_received_date(file_path, fmt, year_full):
     dt = datetime.fromtimestamp(os.path.getmtime(file_path))
-    if fmt == "slash":
-        year = year_full or str(dt.year)
-        return f"{year}/{dt.month:02d}/{dt.day:02d}"
-    return f"{dt.month}.{dt.day}"
+    return f"{dt.year}.{dt.month:02d}.{dt.day:02d}"
 
 
 def _extract_doc_no(text):
@@ -111,43 +122,30 @@ def _extract_doc_no(text):
     for pat in patterns:
         m = re.search(pat, stem)
         if m:
-            return m.group(1).strip()
+            return re.sub(r"\s+", "", m.group(1)).strip()
     m = re.search(r"[（(]([^）)]+号)[)）]", stem)
     if m:
         inner = m.group(1).strip()
         if re.search(r"20\d{2}", inner):
-            return inner
+            return re.sub(r"\s+", "", inner).strip()
     return ""
 
 
-def _infer_self_id_pattern(sheet, header_row, self_col, year_full):
-    prefix = ""
-    width = 3
-    for r in range(header_row + 1, sheet.nrows):
-        v = str(sheet.cell_value(r, self_col)).strip()
-        if not v:
-            continue
-        m = re.match(r"^([A-Za-z]+)-(\d{4})-(\d+)$", v)
-        if m:
-            prefix = m.group(1)
-            width = len(m.group(3))
-            break
-    if not prefix:
-        prefix = "AUTO"
+def _generate_self_id(sheet, header_row, self_col, year_full, category_label):
+    prefix = CATEGORY_PREFIX_MAP.get(category_label, "QT")
     max_num = 0
+    pattern = re.compile(rf"^{re.escape(prefix)}-{year_full}-(\d+)$")
+
     for r in range(header_row + 1, sheet.nrows):
         v = str(sheet.cell_value(r, self_col)).strip()
-        m = re.match(rf"^{re.escape(prefix)}-(\d{{4}})-(\d+)$", v)
-        if not m:
-            continue
-        if m.group(1) != year_full:
-            continue
-        try:
-            num = int(m.group(2))
-        except Exception:
-            continue
-        max_num = max(max_num, num)
-    return prefix, width, max_num + 1
+        m = pattern.match(v)
+        if m:
+            try:
+                num = int(m.group(1))
+                max_num = max(max_num, num)
+            except ValueError:
+                pass
+    return f"{prefix}-{year_full}-{max_num + 1}"
 
 
 def _infer_last_nonempty(sheet, header_row, col):
@@ -168,8 +166,17 @@ def _hyperlink_formula(target, display):
     return xlwt.Formula(f'HYPERLINK("{t}","{d}")')
 
 
-def _find_existing_row(sheet, header_row, file_col, rel_path, filename):
+def _normalize_doc_no(v):
+    return re.sub(r"\s+", "", str(v or "")).strip()
+
+
+def _find_existing_row(sheet, header_row, doc_col, file_col, doc_no, rel_path, filename):
+    target_doc_no = _normalize_doc_no(doc_no)
     for r in range(header_row + 1, sheet.nrows):
+        if target_doc_no:
+            existing_doc_no = _normalize_doc_no(sheet.cell_value(r, doc_col))
+            if existing_doc_no and existing_doc_no == target_doc_no:
+                return r
         v = str(sheet.cell_value(r, file_col)).strip()
         if not v:
             continue
@@ -205,10 +212,18 @@ def _update_workbook(excel_path, file_path):
         ws = copy(rb)
         sheet = ws.get_sheet(sheet_index)
 
-        existing_row = _find_existing_row(rs, header_row, hm["文件名"], rel_path, filename)
+        doc_no = _extract_doc_no(filename)
+        existing_row = _find_existing_row(
+            rs,
+            header_row,
+            hm["文号"],
+            hm["文件名"],
+            doc_no,
+            rel_path,
+            filename,
+        )
         if existing_row is not None:
-            existing_display = str(rs.cell_value(existing_row, hm["文件名"])).strip() or rel_path
-            sheet.write(existing_row, hm["文件名"], _hyperlink_formula(rel_path, existing_display))
+            sheet.write(existing_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
             ws.save(temp_write_path)
             os.replace(temp_write_path, excel_path)
             return
@@ -219,15 +234,13 @@ def _update_workbook(excel_path, file_path):
         year_full = f"20{year_two}" if year_two else ""
         date_fmt = _infer_date_format(rs, header_row, hm["收文日期"])
         received_date = _format_received_date(file_path, date_fmt, year_full)
-        doc_no = _extract_doc_no(filename)
-        prefix, width, next_num = _infer_self_id_pattern(rs, header_row, hm["自编号"], year_full)
-        self_id = f"{prefix}-{year_full}-{str(next_num).zfill(width)}" if year_full else f"{prefix}-{str(next_num).zfill(width)}"
+        self_id = _generate_self_id(rs, header_row, hm["自编号"], year_full, category_label)
         transmit = _infer_last_nonempty(rs, header_row, hm["传阅方式"])
 
         sheet.write(target_row, hm["序号"], _next_seq(rs, header_row, hm["序号"]))
         sheet.write(target_row, hm["收文日期"], received_date)
         sheet.write(target_row, hm["文号"], doc_no)
-        sheet.write(target_row, hm["文件名"], _hyperlink_formula(rel_path, rel_path))
+        sheet.write(target_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
         sheet.write(target_row, hm["自编号"], self_id)
         sheet.write(target_row, hm["传阅方式"], transmit)
         sheet.write(target_row, hm["存盒位置"], "")
@@ -274,7 +287,11 @@ class AutoHyperlinkHandler(FileSystemEventHandler):
 
     def _handle(self, file_path, kind):
         filename = os.path.basename(file_path)
-        if filename.startswith("~$") or filename.lower().endswith(".tmp"):
+        # Filter temp files and the executable/script itself
+        if filename.startswith("~$") or filename.lower().endswith(".tmp") or \
+           filename.lower() in ["autohyperlink.exe", "auto_hyperlink.py", "auto_hyperlink.spec"]:
+            return
+        if re.match(r"^20\d{2}工区收文目录\.xls$", filename):
             return
         year = _find_year_two_digits(file_path)
         if not year:

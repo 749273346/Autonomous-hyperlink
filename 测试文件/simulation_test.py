@@ -9,11 +9,18 @@ import sys
 # 配置路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_FILE_SUBDIR = r"10-事项通知\25"
-TEST_FILENAME = "自动化测试通知_（测函〔2025〕999号）.doc"
+TEST_FILENAME = f"自动化测试通知_（测函〔2025〕{int(time.time())}号）.doc"
 TEST_FILE_PATH = os.path.join(BASE_DIR, TEST_FILE_SUBDIR, TEST_FILENAME)
 EXCEL_NAME = "2025工区收文目录.xls"
 EXCEL_PATH = os.path.join(BASE_DIR, EXCEL_NAME)
 MONITOR_SCRIPT = "auto_hyperlink.py"
+
+def _extract_doc_no_simple(filename):
+    import re
+    m = re.search(r"[（(]([^）)]+号)[)）]", filename)
+    if m:
+        return m.group(1).strip()
+    return ""
 
 def print_status(msg, status="INFO"):
     print(f"[{status}] {msg}")
@@ -114,23 +121,19 @@ def verify_excel():
                 # print_status(f"Row {r+1}: {row_str}", "DEBUG")
                 
                 # 匹配逻辑修改：优先匹配文号，因为 xlrd 可能读不到公式计算后的文件名
-                expected_doc_no = "测函〔2025〕999号"
+                expected_doc_no = _extract_doc_no_simple(TEST_FILENAME)
                 
                 # 检查文号是否在行数据中
-                if expected_doc_no in row_str:
+                if expected_doc_no and expected_doc_no in row_str:
                      print_status(f"Row {r+1}: {row_values}", "DEBUG") 
                      print_status(f"在工作表 '{s.name}' 第 {r+1} 行找到测试记录（通过文号匹配）！", "SUCCESS")
                      print_status(f"行数据: {row_values}", "INFO")
                      
-                     # 进一步验证日期
-                     # 今天的日期
-                     today_slash = time.strftime("%Y/%m/%d")
-                     today_dot = time.strftime("%m.%d") # 备用格式
-                     
-                     if today_slash in row_str or today_dot in row_str:
-                         print_status(f"日期验证通过", "SUCCESS")
+                     today_dot = time.strftime("%Y.%m.%d")
+                     if today_dot in row_str:
+                         print_status("日期验证通过", "SUCCESS")
                      else:
-                         print_status(f"日期验证警告: 未找到 {today_slash}", "WARN")
+                         print_status(f"日期验证警告: 未找到 {today_dot}", "WARN")
 
                      found = True
                      break
