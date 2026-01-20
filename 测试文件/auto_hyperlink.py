@@ -96,6 +96,35 @@ def _next_seq(sheet, header_row, seq_col):
     return (last_seq or 0) + 1
 
 
+def _is_blank_cell(v):
+    return not str(v).strip()
+
+
+def _find_first_empty_content_row(sheet, header_row, hm):
+    content_cols = [hm[k] for k in ("收文日期", "文号", "文件名", "自编号") if k in hm]
+    for r in range(header_row + 1, sheet.nrows):
+        if all(_is_blank_cell(sheet.cell_value(r, c)) for c in content_cols):
+            return r
+    return sheet.nrows
+
+
+def _next_seq_by_content(sheet, header_row, hm):
+    seq_col = hm["序号"]
+    content_cols = [hm[k] for k in ("收文日期", "文号", "文件名", "自编号") if k in hm]
+    last_seq = 0
+    for r in range(header_row + 1, sheet.nrows):
+        if all(_is_blank_cell(sheet.cell_value(r, c)) for c in content_cols):
+            continue
+        v = str(sheet.cell_value(r, seq_col)).strip()
+        if not v:
+            continue
+        try:
+            last_seq = max(last_seq, int(float(v)))
+        except Exception:
+            continue
+    return last_seq + 1
+
+
 def _infer_date_format(sheet, header_row, date_col):
     for r in range(sheet.nrows - 1, header_row, -1):
         v = str(sheet.cell_value(r, date_col)).strip()
@@ -166,6 +195,68 @@ def _hyperlink_formula(target, display):
     return xlwt.Formula(f'HYPERLINK("{t}","{d}")')
 
 
+def _file_uri_from_path(p):
+    ap = os.path.abspath(p)
+    uri = ap.replace("\\", "/")
+    if re.match(r"^[A-Za-z]:/", uri):
+        return "file:///" + uri
+    return "file://" + uri
+
+
+def _try_add_hyperlink_com(excel_path, sheet_name, row0, col0, address, text):
+    try:
+        import pythoncom
+        import win32com.client
+    except Exception:
+        return False
+
+    def _do(prog_id):
+        pythoncom.CoInitialize()
+        app = None
+        wb = None
+        try:
+            app = win32com.client.DispatchEx(prog_id)
+            app.Visible = False
+            app.DisplayAlerts = False
+            wb = app.Workbooks.Open(excel_path, UpdateLinks=0, ReadOnly=False)
+            ws = wb.Worksheets(sheet_name)
+            cell = ws.Cells(row0 + 1, col0 + 1)
+            try:
+                cell.Hyperlinks.Delete()
+            except Exception:
+                pass
+            ws.Hyperlinks.Add(Anchor=cell, Address=address, TextToDisplay=text)
+            wb.Save()
+            wb.Close(SaveChanges=True)
+            wb = None
+            app.Quit()
+            app = None
+            return True
+        finally:
+            try:
+                if wb is not None:
+                    wb.Close(SaveChanges=True)
+            except Exception:
+                pass
+            try:
+                if app is not None:
+                    app.Quit()
+            except Exception:
+                pass
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+    for prog_id in ("Excel.Application", "ket.Application"):
+        try:
+            if _do(prog_id):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _normalize_doc_no(v):
     return re.sub(r"\s+", "", str(v or "")).strip()
 
@@ -222,14 +313,22 @@ def _update_workbook(excel_path, file_path):
             rel_path,
             filename,
         )
+        sheet_name = rb.sheet_names()[sheet_index]
         if existing_row is not None:
-            sheet.write(existing_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
+            sheet.write(existing_row, hm["文件名"], filename)
+            sheet.write(existing_row, hm["备注"], "")
             ws.save(temp_write_path)
             os.replace(temp_write_path, excel_path)
+            if not _try_add_hyperlink_com(excel_path, sheet_name, existing_row, hm["文件名"], rel_path, filename):
+                rb2 = xlrd.open_workbook(excel_path, formatting_info=False)
+                ws2 = copy(rb2)
+                sheet2 = ws2.get_sheet(sheet_index)
+                sheet2.write(existing_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
+                ws2.save(temp_write_path)
+                os.replace(temp_write_path, excel_path)
             return
 
-        target_row, _ = _last_data_row(rs, header_row, hm["序号"])
-        target_row += 1
+        target_row = _find_first_empty_content_row(rs, header_row, hm)
         year_two = _find_year_two_digits(file_path) or ""
         year_full = f"20{year_two}" if year_two else ""
         date_fmt = _infer_date_format(rs, header_row, hm["收文日期"])
@@ -237,10 +336,19 @@ def _update_workbook(excel_path, file_path):
         self_id = _generate_self_id(rs, header_row, hm["自编号"], year_full, category_label)
         transmit = _infer_last_nonempty(rs, header_row, hm["传阅方式"])
 
-        sheet.write(target_row, hm["序号"], _next_seq(rs, header_row, hm["序号"]))
+        existing_seq = str(rs.cell_value(target_row, hm["序号"])).strip() if target_row < rs.nrows else ""
+        if existing_seq:
+            try:
+                seq_value = int(float(existing_seq))
+            except Exception:
+                seq_value = _next_seq_by_content(rs, header_row, hm)
+        else:
+            seq_value = _next_seq_by_content(rs, header_row, hm)
+
+        sheet.write(target_row, hm["序号"], seq_value)
         sheet.write(target_row, hm["收文日期"], received_date)
         sheet.write(target_row, hm["文号"], doc_no)
-        sheet.write(target_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
+        sheet.write(target_row, hm["文件名"], filename)
         sheet.write(target_row, hm["自编号"], self_id)
         sheet.write(target_row, hm["传阅方式"], transmit)
         sheet.write(target_row, hm["存盒位置"], "")
@@ -248,6 +356,13 @@ def _update_workbook(excel_path, file_path):
 
         ws.save(temp_write_path)
         os.replace(temp_write_path, excel_path)
+        if not _try_add_hyperlink_com(excel_path, sheet_name, target_row, hm["文件名"], rel_path, filename):
+            rb2 = xlrd.open_workbook(excel_path, formatting_info=False)
+            ws2 = copy(rb2)
+            sheet2 = ws2.get_sheet(sheet_index)
+            sheet2.write(target_row, hm["文件名"], _hyperlink_formula(rel_path, filename))
+            ws2.save(temp_write_path)
+            os.replace(temp_write_path, excel_path)
     finally:
         if os.path.exists(temp_read_path):
             try:

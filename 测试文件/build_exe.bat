@@ -13,6 +13,9 @@ echo [2/4] Building AutoHyperlink.exe (Silent Mode + Icon)...
 pyinstaller --noconfirm --onefile --noconsole ^
     --name "AutoHyperlink" ^
     --icon "monitor.ico" ^
+    --hidden-import=win32com.client ^
+    --hidden-import=pythoncom ^
+    --hidden-import=pywintypes ^
     --hidden-import=xlutils ^
     --hidden-import=watchdog ^
     --hidden-import=xlwt ^
