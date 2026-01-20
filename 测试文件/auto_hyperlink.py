@@ -185,7 +185,7 @@ def _update_workbook(excel_path, file_path):
     temp_write_path = excel_path + ".write.tmp"
     shutil.copy2(excel_path, temp_read_path)
     try:
-        rb = xlrd.open_workbook(temp_read_path, formatting_info=True)
+        rb = xlrd.open_workbook(temp_read_path, formatting_info=False)
         category_label = _category_label_from_path(file_path)
         sheet_index = _find_sheet_index(rb, category_label)
         if sheet_index is None:
