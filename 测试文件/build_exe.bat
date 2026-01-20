@@ -12,7 +12,7 @@ pip install pyinstaller watchdog xlrd==1.2.0 xlutils xlwt pywin32 pillow
 echo [2/4] Building AutoHyperlink.exe (Silent Mode + Icon)...
 pyinstaller --noconfirm --onefile --noconsole ^
     --name "AutoHyperlink" ^
-    --icon "link.ico" ^
+    --icon "monitor.ico" ^
     --hidden-import=xlutils ^
     --hidden-import=watchdog ^
     --hidden-import=xlwt ^
@@ -40,8 +40,8 @@ echo.
 echo ========================================================
 echo Build Complete!
 echo Executables location: %~dp0dist\
-echo   - AutoHyperlink.exe (Green Link Icon)
-echo   - FolderMonitor.exe (Blue Monitor Icon)
+echo   - AutoHyperlink.exe (Same Icon as FolderMonitor)
+echo   - FolderMonitor.exe
 echo ========================================================
 echo Usage:
 echo 1. Copy BOTH files to the folder you want to monitor.

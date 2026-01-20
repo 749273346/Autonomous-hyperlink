@@ -50,10 +50,21 @@
 | :--- | :--- | :--- |
 | **文件添加后 Excel 未更新** | Excel 被占用或文件名不匹配 | 关闭 Excel 文件；检查目录文件名是否正确。 |
 | **不知道程序是否在运行** | 静默模式特性 | 打开任务管理器查看是否有 `AutoHyperlink.exe` 进程。 |
+| **图标看起来没有变化** | Windows 图标缓存未刷新 | 重启“Windows 资源管理器”，或按 5.3 清理图标缓存。 |
 
 ### 5.2 注意事项
 1. **不要手动运行 AutoHyperlink.exe**：在无感模式下，由 `FolderMonitor` 自动管理它。如果您手动双击运行 `AutoHyperlink.exe`，它也会静默运行，但不会自动关闭。
 2. **多文件夹部署**：如果您有多个不同的项目文件夹需要监控，请将两个 EXE 复制到每个文件夹中，并分别运行各自的 `FolderMonitor.exe`。
+
+### 5.3 图标缓存刷新
+- 方法一：打开任务管理器，找到“Windows 资源管理器”，右键“重新启动”。
+- 方法二：执行以下命令后再打开文件夹查看图标：
+
+```bat
+taskkill /IM explorer.exe /F
+del /A /Q "%localappdata%\Microsoft\Windows\Explorer\iconcache*"
+start explorer.exe
+```
 
 ## 6. 开发者维护
 - **源码位置**：
